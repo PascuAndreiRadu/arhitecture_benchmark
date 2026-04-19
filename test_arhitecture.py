@@ -148,7 +148,7 @@ class RlResults:
     model: BaseAlgorithm
     std_reward: float
     mean_reward: float
-    shap_values: np.ndarray
+    shap_values: np.ndarray | None
  
  
 @dataclass
@@ -393,7 +393,7 @@ class bench_mark:
                 RegResults(
                     model_name=type(reg).__name__,
                     model=reg,
-                    results=y_pred,           # BUG FIX: was missing, causing TypeError
+                    results=y_pred,          
                     mae=mae,
                     mse=mse,
                     mape=mape,
@@ -404,7 +404,7 @@ class bench_mark:
  
         return results
  
-    def rl(self, env, time_steps: int, eval_freq: int = -1) -> list[RlResults]:
+    def rl(self, env:gym.Env, time_steps: int, eval_freq: int = -1,get_feature_importance=False) -> list[RlResults]:
         """
         Train and evaluate all SB3 algorithms compatible with *env*'s action
         space.
@@ -467,6 +467,7 @@ class bench_mark:
  
         for model_cls in available_models:
             model_name = model_cls.__name__
+            print(model_name)
  
             if eval_freq > 0:
                 eval_callback = EvalCallback(
@@ -481,9 +482,9 @@ class bench_mark:
             env.reset()
             model = model_cls(policy, env, verbose=0)
             model.learn(time_steps, callback=eval_callback)
-            mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=10)
-            shap_values = self._rl_shap_feature_importance(env, model)
- 
+            mean_reward, std_reward = evaluate_policy(model, env, n_eval_episodes=1)
+            shap_values = self._rl_shap_feature_importance(env, model) if get_feature_importance else None
+
             results.append(
                 RlResults(
                     model_name=model_name,
@@ -525,7 +526,11 @@ class bench_mark:
         The number of k-means clusters is capped at ``min(50, len(data))`` to
         avoid errors on small datasets.
         """
-        n_clusters = min(50, len(data))          # BUG FIX: crash when len(data) < 50
+        if data.ndim == 3:
+            n_samples = data.shape[0]
+            data = data.reshape(n_samples, -1)
+
+        n_clusters = min(50, len(data))         
         background = shap.kmeans(data, n_clusters)
         explainer = shap.KernelExplainer(model.predict, background)
         shap_values = explainer.shap_values(data[:100])
@@ -570,8 +575,11 @@ class bench_mark:
             obs = next_obs if not (done or truncated) else env.reset()[0]
  
         X = np.array(obs_list)
+        if X.ndim == 3:
+            n_samples = X.shape[0]
+            X = X.reshape(n_samples, -1)
  
-        n_clusters = min(50, len(X))             # BUG FIX: crash when len(X) < 50
+        n_clusters = min(50, len(X))    
         background = shap.kmeans(X, n_clusters)
         explainer = shap.KernelExplainer(
             lambda x: self._predict_fn(model, x),
@@ -603,11 +611,16 @@ class bench_mark:
             Predicted actions for each observation in *obs_batch*.
         """
         actions = []
+
+        obs_shape = model.observation_space.shape  # (5, 2)
+
         for obs in obs_batch:
+            obs = obs.reshape(obs_shape)  
             action, _ = model.predict(obs, deterministic=True)
             actions.append(action)
+
         return np.array(actions)
- 
+    
     def _policy_select(self, env) -> str:
         """
         Infer the appropriate SB3 policy string from the environment's
