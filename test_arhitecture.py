@@ -530,10 +530,28 @@ class bench_mark:
             n_samples = data.shape[0]
             data = data.reshape(n_samples, -1)
 
-        n_clusters = min(50, len(data))         
-        background = shap.kmeans(data, n_clusters)
+        if data.ndim == 3:
+                n_samples = data.shape[0]
+                data = data.reshape(n_samples, -1)
+
+        unique_data = np.unique(data, axis=0)
+        n_unique = len(unique_data)
+
+        if n_unique < 2:
+            background = unique_data
+        else:
+            n_clusters = min(50, n_unique)
+
+            if n_unique < 50:
+                idx = np.random.choice(n_unique, size=n_clusters, replace=False)
+                background = unique_data[idx]
+            else:
+                background = shap.kmeans(unique_data, n_clusters)
+
         explainer = shap.KernelExplainer(model.predict, background)
+
         shap_values = explainer.shap_values(data[:100])
+
         return shap_values
  
     def _rl_shap_feature_importance(self, env, model: BaseAlgorithm) -> np.ndarray:
@@ -579,8 +597,20 @@ class bench_mark:
             n_samples = X.shape[0]
             X = X.reshape(n_samples, -1)
  
-        n_clusters = min(50, len(X))    
-        background = shap.kmeans(X, n_clusters)
+        unique_X = np.unique(X, axis=0)
+        n_unique = len(unique_X)
+
+        if n_unique < 2:
+            background = unique_X
+        else:
+            n_clusters = min(50, n_unique)
+
+            if n_unique < 50:
+                idx = np.random.choice(n_unique, size=n_clusters, replace=False)
+                background = unique_X[idx]
+            else:
+                background = shap.kmeans(unique_X, n_clusters)
+
         explainer = shap.KernelExplainer(
             lambda x: self._predict_fn(model, x),
             background,
